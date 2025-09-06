@@ -1031,7 +1031,10 @@
           persist();
         });
         tb.appendChild(tr);
-        if (it.subItems && it.subItems.length) {
+
+        // ✨ الإصلاح: التأكد من أن هذا الكود يعمل فقط على شاشة الكمبيوتر ✨
+        const isDesktop = window.matchMedia('(min-width: 431px)').matches;
+        if (isDesktop && it.subItems && it.subItems.length) {
           const row = document.createElement('tr');
           const cell = document.createElement('td');
           cell.colSpan = 6;
