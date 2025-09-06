@@ -649,7 +649,6 @@
       </thead>
       <tbody></tbody>
     </table>
-    <!-- ✨ الزر الجديد هنا ✨ -->
     <button id="save-all-changes" class="primary" style="width: 100%; margin-top: 15px; padding: 12px; font-size: 1.1rem;">💾 حفظ التعديلات</button>
     <div class="totals">
       <div><div class="pill">إجمالي المخطط</div><h3 id="t_planned">0</h3></div>
@@ -848,8 +847,7 @@
     function persist() {
       save(STORE_KEY, state)
     }
-    
-    // ✨ الدالة الجديدة للحفظ اليدوي ✨
+
     function saveAllChanges() {
         persist();
         alert('تم حفظ جميع التعديلات ✅');
@@ -1007,10 +1005,10 @@
           dueCell.textContent = Math.max(0, (+it.planned || 0) - (+it.paid || 0));
           statusCell.textContent = st.text;
           statusCell.className = 'status ' + st.cls;
-          updateTotals(); // ✨ تم حذف persist()
+          updateTotals();
         }
         nameInp.addEventListener('input', e => {
-          it.name = normalizeCat(e.target.value); // ✨ تم حذف persist()
+          it.name = normalizeCat(e.target.value);
         });
         pInp.addEventListener('input', e => {
           it.planned = +e.target.value || 0;
@@ -1024,16 +1022,46 @@
           it.paid = +it.planned || 0;
           paInp.value = it.paid;
           refreshRow();
-          persist(); // ✨ عمليات الأزرار لا تزال تحفظ فوراً
+          persist();
         });
         delBtn.addEventListener('click', () => {
           state.items = state.items.filter(x => x !== it);
           renderExpenses();
           updateTotals();
-          persist(); // ✨ عمليات الحذف لا تزال تحفظ فوراً
+          persist();
         });
         tb.appendChild(tr);
-        // ... الكود الخاص بالجداول الفرعية يبقى كما هو ...
+        if (it.subItems && it.subItems.length) {
+          const row = document.createElement('tr');
+          const cell = document.createElement('td');
+          cell.colSpan = 6;
+          const subTable = document.createElement('table');
+          subTable.className = 'sub-table';
+          subTable.innerHTML = `
+            <thead><tr><th>التفصيل</th><th>المبلغ</th><th>إجراء</th></tr></thead>
+            <tbody></tbody>
+          `;
+          const subBody = subTable.querySelector('tbody');
+          it.subItems.forEach((s, idx) => {
+            const subTr = document.createElement('tr');
+            subTr.innerHTML = `
+              <td>${s.name}</td>
+              <td>${s.amount}</td>
+              <td><button class="danger">❌ حذف</button></td>
+            `;
+            subTr.querySelector('button').addEventListener('click', () => {
+              it.subItems.splice(idx, 1);
+              it.paid = Math.max(0, (+it.paid || 0) - (+s.amount || 0));
+              renderExpenses();
+              updateTotals();
+              persist();
+            });
+            subBody.appendChild(subTr);
+          });
+          cell.appendChild(subTable);
+          row.appendChild(cell);
+          tb.appendChild(row);
+        }
       });
     }
 
@@ -1051,7 +1079,7 @@
         const delBtn = tr.querySelector('.del-extra');
         amountInp.addEventListener('input', e => {
           ex.amount = +e.target.value || 0;
-          updateTotals(); // ✨ تم حذف persist()
+          updateTotals();
         });
         delBtn.addEventListener('click', () => {
           state.extras.splice(idx, 1);
@@ -1093,43 +1121,536 @@
     }
 
     function addInvestment() {
-      // ... الكود يبقى كما هو لأنه يحفظ عند الإضافة
+      const type = normalizeCat($('inv-type').value || '');
+      const dest = normalizeCat($('inv-dest').value || '');
+      const amount = +($('inv-amount').value || 0);
+      const source = normalizeCat($('inv-source').value || '');
+      const notes = $('inv-notes').value || '';
+      if (!type || !dest || amount <= 0) {
+        alert('أدخل نوع الاستثمار والوجهة والمبلغ.');
+        return;
+      }
+      const addedMonth = currentMonthName();
+      state.investments.push({
+        type,
+        dest,
+        amount,
+        source,
+        notes,
+        addedMonth
+      });
+      $('inv-type').value = '';
+      $('inv-dest').value = '';
+      $('inv-amount').value = '';
+      $('inv-source').value = '';
+      $('inv-notes').value = '';
+      renderInvestments();
       persist();
+      alert('تمت إضافة الاستثمار ✅');
     }
 
     function addItem() {
-      // ... الكود يبقى كما هو لأنه يحفظ عند الإضافة
+      try { if (document.activeElement) document.activeElement.blur(); } catch {}
+      const selEl = $('name');
+      const selVal = selEl && selEl.value ? selEl.value : '';
+      const customRaw = $('name-custom').value || '';
+      const custom = normalizeCat(customRaw);
+      const chosen = (selVal === 'أخرى' && custom) ? custom : selVal;
+      addCustomCatIfNeeded(chosen);
+      const plannedVal = +($('planned').value || 0);
+      const paidVal = +($('paid').value || 0);
+      if (!chosen && plannedVal === 0 && paidVal === 0) {
+        alert('اختر اسم المصروف أو اكتب مبلغًا.');
+        return;
+      }
+      state.items.push({
+        name: chosen || 'غير مسمى',
+        planned: plannedVal,
+        paid: paidVal,
+        subItems: []
+      });
+      $('name-custom').value = '';
+      $('planned').value = '';
+      $('paid').value = '';
+      renderExpenses();
+      updateTotals();
       persist();
     }
 
     function saveCurrentAsTemplate() {
-      // ... الكود يبقى كما هو ...
+      const tName = prompt('أدخل اسم القالب:');
+      if (!tName) return;
+      const itemsOnly = state.items.map(i => ({
+        name: i.name,
+        planned: +i.planned || 0,
+        paid: +i.paid || 0,
+        subItems: Array.isArray(i.subItems) ? i.subItems.map(s => ({
+          name: s.name,
+          amount: +s.amount || 0
+        })) : []
+      }));
+      templates[tName] = {
+        items: itemsOnly,
+        salary: +state.salary || 0
+      };
+      save(TEMPLATES_KEY, templates);
+      refreshTemplates();
+      alert('تم حفظ القالب ✅');
     }
 
     function refreshTemplates() {
-      // ... الكود يبقى كما هو ...
+      const sel = $('templates-select');
+      sel.innerHTML = '';
+      Object.keys(templates).forEach(k => {
+        const opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = k;
+        sel.appendChild(opt);
+      });
     }
 
     function applyTemplate() {
-      // ... الكود يبقى كما هو لأنه يحفظ عند تطبيق القالب
+      const k = $('templates-select').value;
+      if (!k || !templates[k]) return;
+      state.items = JSON.parse(JSON.stringify(templates[k].items || []));
+      state.salary = +templates[k].salary || 0;
+      renderExpenses();
+      renderExtras();
+      updateTotals();
       persist();
     }
 
     function deleteTemplate() {
-      // ... الكود يبقى كما هو ...
+      const k = $('templates-select').value;
+      if (!k) return;
+      if (confirm('حذف القالب؟')) {
+        delete templates[k];
+        save(TEMPLATES_KEY, templates);
+        refreshTemplates();
+      }
     }
 
     function addExtra() {
-      // ... الكود يبقى كما هو لأنه يحفظ عند الإضافة
+      const name = normalizeCat($('extra-name').value || '');
+      const amount = +$('extra-amount').value || 0;
+      if (!name || amount <= 0) {
+        alert('أدخل اسم الدخل ومبلغه');
+        return;
+      }
+      state.extras.push({
+        name,
+        amount
+      });
+      $('extra-name').value = '';
+      $('extra-amount').value = '';
+      renderExtras();
+      updateTotals();
       persist();
     }
 
-    // ... باقي الدوال حتى bind() تبقى كما هي ...
+    function computeTotalsFor(s) {
+      const planned = s.items.reduce((a, b) => a + (+b.planned || 0), 0);
+      const paid = s.items.reduce((a, b) => a + (+b.paid || 0), 0);
+      const due = Math.max(0, planned - paid);
+      const extrasSum = (s.extras || []).reduce((a, e) => a + (+e.amount || 0), 0);
+      const balance = (+s.salary || 0) + extrasSum - paid;
+      const completed = s.items.filter(i => (+i.paid || 0) >= (+i.planned || 0) && (+i.planned || 0) > 0).length;
+      const partial = s.items.filter(i => (+i.paid || 0) > 0 && (+i.paid || 0) < (+i.planned || 0)).length;
+      const zeroPaid = s.items.filter(i => !(+i.paid || 0)).length;
+      const execRate = planned > 0 ? Math.round((paid / planned) * 100) : 0;
+      const invested = (s.investments || []).reduce((a, x) => a + (+x.amount || 0), 0);
+      return {
+        planned,
+        paid,
+        due,
+        balance,
+        completed,
+        partial,
+        zeroPaid,
+        execRate,
+        invested
+      };
+    }
+
+    function periodFromInputs() {
+      const y = ($('year-input').value || '').trim();
+      const m = $('month-select').value || '';
+      if (!/^[0-9]{4}$/.test(y)) {
+        alert('أدخل السنة بصيغة صحيحة');
+        return null;
+      }
+      return `${y}-${m}`;
+    }
+
+    function monthIndicator(totals) {
+      if (totals.paid < totals.planned) return '🟢';
+      if (totals.paid === totals.planned) return '✅';
+      return '🔴';
+    }
+
+    function closeMonth() {
+      const period = periodFromInputs() || monthNow();
+      if (!state.items.length && !state.extras.length && !state.investments.length) {
+        alert('لا توجد بيانات لحفظها');
+        return;
+      }
+      const snapshot = {
+        period,
+        salary: +state.salary || 0,
+        extras: state.extras || [],
+        items: state.items.map(i => ({
+          name: i.name,
+          planned: +i.planned || 0,
+          paid: +i.paid || 0,
+          subItems: i.subItems || []
+        })),
+        investments: (state.investments || []).map(x => ({
+          type: x.type,
+          dest: x.dest,
+          amount: +x.amount || 0,
+          source: x.source || '',
+          notes: x.notes || '',
+          addedMonth: x.addedMonth || currentMonthName()
+        }))
+      };
+      snapshot.totals = computeTotalsFor(snapshot);
+      budgetHistory[period] = snapshot;
+      save(HISTORY_KEY, budgetHistory);
+      refreshHistorySelect(period);
+      renderHistory();
+      renderHistoryChart();
+      renderDeltaChart();
+      alert('تم حفظ الشهر في الأرشيف ✅');
+    }
+
+    function refreshHistorySelect(selectPeriod) {
+      const sel = $('history-select');
+      sel.innerHTML = '';
+      const periods = Object.keys(budgetHistory).sort().reverse();
+      periods.forEach(p => {
+        const t = budgetHistory[p]?.totals || {
+          planned: 0,
+          paid: 0
+        };
+        const mark = monthIndicator(t);
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = `${p} ${mark}`;
+        sel.appendChild(opt);
+      });
+      if (selectPeriod && periods.includes(selectPeriod)) sel.value = selectPeriod;
+    }
+
+    function renderHistory() {
+      const sel = $('history-select');
+      const wrap = $('history-table-wrap');
+      const kpis = $('history-kpis');
+      if (!sel || !wrap || !kpis) return;
+      const p = sel.value;
+      if (!p || !budgetHistory[p]) {
+        wrap.innerHTML = '<p class="muted">لا يوجد شهر محدد.</p>';
+        kpis.innerHTML = '';
+        return;
+      }
+      const snap = budgetHistory[p];
+      const t = snap.totals;
+      kpis.innerHTML = `
+        <div><div class="pill">إجمالي المخطط</div><h3>${t.planned}</h3></div>
+        <div><div class="pill">إجمالي المدفوع</div><h3>${t.paid}</h3></div>
+        <div><div class="pill">نسبة التنفيذ</div><h3>${t.execRate}%</h3></div>
+        <div><div class="pill">بنود مدفوعة</div><h3>${t.completed}</h3></div>
+        <div><div class="pill">مدفوعة جزئي</div><h3>${t.partial}</h3></div>
+        <div><div class="pill">غير مدفوع</div><h3>${t.zeroPaid}</h3></div>
+        <div><div class="pill">المتبقي</div><h3>${t.due}</h3></div>
+        <div><div class="pill">الرصيد المتوقع</div><h3>${t.balance}</h3></div>
+        <div><div class="pill">إجمالي الاستثمارات</div><h3>${t.invested||0}</h3></div>
+      `;
+      let rows = '';
+      snap.items.forEach(i => {
+        const due = Math.max(0, (+i.planned || 0) - (+i.paid || 0));
+        const st = (+i.paid || 0) >= (+i.planned || 0) && (+i.planned || 0) > 0 ? 'مدفوع' : ((+i.paid || 0) > 0 ? 'مدفوع جزئي' : 'غير مدفوع');
+        rows += `<tr><td>${i.name}</td><td>${i.planned}</td><td>${i.paid}</td><td>${due}</td><td>${st}</td></tr>`;
+        if (i.subItems && i.subItems.length) {
+          i.subItems.forEach(s => {
+            rows += `<tr><td>↳ ${s.name}</td><td colspan="4">${s.amount}</td></tr>`
+          });
+        }
+      });
+      const exSum = (snap.extras || []).reduce((a, e) => a + (+e.amount || 0), 0);
+      if (exSum > 0) {
+        rows += `<tr><td><span class="pill">دخل</span> مجموع الدخل الإضافي</td><td>—</td><td>${exSum}</td><td>—</td><td>دخل</td></tr>`;
+      }
+      let invRows = '';
+      const invs = snap.investments || [];
+      const invTotal = invs.reduce((a, x) => a + (+x.amount || 0), 0);
+      if (invs.length) {
+        invs.forEach(x => {
+          invRows += `<tr>
+            <td>${x.type||''}</td>
+            <td>${x.dest||''}</td>
+            <td>${x.amount||0}</td>
+            <td>${x.source||''}</td>
+            <td>${x.addedMonth||''}</td>
+            <td>${(x.notes||'').replace(/</g,'&lt;')}</td>
+          </tr>`;
+        });
+        invRows += `<tr><td colspan="2"><strong>الإجمالي</strong></td><td><strong>${invTotal}</strong></td><td colspan="3">—</td></tr>`;
+      } else {
+        invRows = `<tr><td colspan="6" class="muted">لا توجد استثمارات مسجلة لهذا الشهر.</td></tr>`;
+      }
+      wrap.innerHTML = `
+        <h4 style="margin-top:0">تفاصيل المصروفات</h4>
+        <table class="main-table">
+          <thead><tr><th>المصروف</th><th>المخطط</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <h4 style="margin-top:20px">تفاصيل الاستثمارات</h4>
+        <table class="main-table">
+          <thead><tr><th>النوع</th><th>الوجهة</th><th>المبلغ</th><th>المصدر</th><th>الشهر</th><th>تفاصيل</th></tr></thead>
+          <tbody>${invRows}</tbody>
+        </table>
+      `;
+      renderHistoryChart();
+      renderDeltaChart();
+    }
+
+    function buildSeries() {
+      const hist = budgetHistory || {};
+      const periods = Object.keys(hist).sort();
+      const labels = [],
+        planned = [],
+        paid = [],
+        execRate = [];
+      periods.forEach(p => {
+        const t = hist[p]?.totals;
+        if (!t) return;
+        labels.push(p);
+        planned.push(+t.planned || 0);
+        paid.push(+t.paid || 0);
+        execRate.push((+t.planned || 0) > 0 ? Math.round((+t.paid / +t.planned) * 100) : 0);
+      });
+      return {
+        labels,
+        planned,
+        paid,
+        execRate
+      };
+    }
+
+    function buildBalance() {
+      const hist = budgetHistory || {};
+      const periods = Object.keys(hist).sort();
+      const labels = [],
+        balance = [],
+        colors = [];
+      periods.forEach(p => {
+        const t = hist[p]?.totals;
+        if (!t) return;
+        const b = (+t.balance || 0);
+        labels.push(p);
+        balance.push(b);
+        colors.push(b >= 0 ? 'rgba(34,197,94,0.85)' : 'rgba(239,68,68,0.85)');
+      });
+      return {
+        labels,
+        balance,
+        colors
+      };
+    }
+
+    function renderHistoryChart() {
+      const ctx = $('history-chart');
+      if (!ctx) return;
+      const {
+        labels,
+        planned,
+        paid,
+        execRate
+      } = buildSeries();
+      if (historyChart) {
+        historyChart.destroy();
+        historyChart = null;
+      }
+      if (!labels.length) return;
+      historyChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            type: 'bar',
+            label: 'المخطط',
+            data: planned,
+            borderWidth: 1
+          }, {
+            type: 'bar',
+            label: 'المدفوع',
+            data: paid,
+            borderWidth: 1
+          }, {
+            type: 'line',
+            label: 'نسبة التنفيذ %',
+            data: execRate,
+            yAxisID: 'y1',
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'درهم'
+              }
+            },
+            y1: {
+              beginAtZero: true,
+              position: 'right',
+              grid: {
+                drawOnChartArea: false
+              },
+              ticks: {
+                callback: v => v + '%'
+              },
+              title: {
+                display: true,
+                text: '٪'
+              },
+              suggestedMax: 120
+            }
+          }
+        }
+      });
+    }
+
+    function renderDeltaChart() {
+      const ctx = $('delta-chart');
+      if (!ctx) return;
+      const {
+        labels,
+        balance,
+        colors
+      } = buildBalance();
+      if (deltaChart) {
+        deltaChart.destroy();
+        deltaChart = null;
+      }
+      if (!labels.length) return;
+      const minVal = Math.min(0, ...balance);
+      const maxVal = Math.max(0, ...balance);
+      const maxAbs = Math.max(Math.abs(minVal), Math.abs(maxVal));
+      deltaChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'المتبقي (راتب + دخل إضافي - المدفوع) — 0 = نقطة التعادل',
+            data: balance,
+            backgroundColor: colors
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true
+            }
+          },
+          scales: {
+            y: {
+              suggestedMin: -maxAbs,
+              suggestedMax: maxAbs,
+              title: {
+                display: true,
+                text: 'درهم'
+              },
+              grid: {
+                drawTicks: true
+              }
+            }
+          },
+          interaction: {
+            mode: 'index',
+            intersect: false
+          }
+        }
+      });
+    }
+
+    function exportHistoryJSON() {
+      const blob = new Blob([JSON.stringify(budgetHistory, null, 2)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'budget-history.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportCSV() {
+      const periods = Object.keys(budgetHistory).sort();
+      let csv = 'period,category,planned,paid,due,status\n';
+      periods.forEach(p => {
+        const snap = budgetHistory[p];
+        snap.items.forEach(i => {
+          const due = Math.max(0, (+i.planned || 0) - (+i.paid || 0));
+          const status = ((+i.paid || 0) >= (+i.planned || 0) && (+i.planned || 0) > 0) ? 'paid' : ((+i.paid || 0) > 0 ? 'partial' : 'unpaid');
+          csv += `${p},"${i.name}",${i.planned},${i.paid},${due},${status}\n`;
+        });
+      });
+      const blob = new Blob([csv], {
+        type: 'text/csv'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'budget-history.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importHistory() {
+      const fileInput = $('import-history');
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          budgetHistory = data || {};
+          save(HISTORY_KEY, budgetHistory);
+          refreshHistorySelect();
+          renderHistory();
+          renderHistoryChart();
+          renderDeltaChart();
+          alert('تم الاستيراد ✅');
+        } catch {
+          alert('ملف غير صالح');
+        }
+      };
+      reader.readAsText(file);
+    }
 
     function bind() {
       function syncSalary(val) {
         state.salary = +val || 0;
-        updateTotals(); // ✨ تم حذف persist()
+        updateTotals();
       }
       const sal2 = $('salary2');
       if (sal2) sal2.addEventListener('input', e => syncSalary(e.target.value));
@@ -1162,15 +1683,52 @@
       $('import-history-btn').addEventListener('click', ()=> $('import-history').click());
       $('import-history').addEventListener('change', importHistory);
       
-      // ✨ ربط الزر الجديد بالدالة الجديدة ✨
       $('save-all-changes').addEventListener('click', saveAllChanges);
     }
     
-    // ... باقي الدوال تبقى كما هي ...
+    function deleteSelectedMonth() {
+      const sel = $('history-select');
+      if (!sel || !sel.value) return;
+      if (confirm(`حذف شهر ${sel.value} من الأرشيف؟`)) {
+        delete budgetHistory[sel.value];
+        save(HISTORY_KEY, budgetHistory);
+        refreshHistorySelect();
+        renderHistory();
+        renderHistoryChart();
+        renderDeltaChart();
+      }
+    }
 
     function init() {
-      // ... الكود يبقى كما هو ...
+      fillMonths();
+      const saved = load(STORE_KEY);
+      if (saved) {
+        state = saved;
+      }
+      if (!Array.isArray(state.investments)) state.investments = [];
+      $('year-input').value = (new Date()).getFullYear();
+      $('month-select').value = (new Date().getMonth() + 1).toString().padStart(2, '0');
+      refreshCats();
+      refreshTemplates();
+      refreshHistorySelect();
+      renderExpenses();
+      renderExtras();
+      renderInvestments();
+      renderHistory();
+      renderHistoryChart();
+      renderDeltaChart();
+      updateTotals();
+      ensureCatsRetries();
+      runEnsures();
       bind();
+      setTimeout(() => {
+        try {
+          const sel = $('name');
+          if (sel && (!sel.options || sel.options.length === 0)) {
+            refreshCats();
+          }
+        } catch {}
+      }, 200);
     }
     document.addEventListener('DOMContentLoaded', init);
   </script>
@@ -1200,7 +1758,6 @@
               }
           });
           state.items[index].subItems = subItems;
-          // ✨ تم حذف persist()
       }
 
       function createSubItemElements(subItem, tr) {
@@ -1285,7 +1842,6 @@
         if(!isNaN(index) && state.items[index]){
           state.items[index].paid = sum;
           updateTotals();
-          // ✨ تم حذف persist()
         }
         updateStatus(tr);
       }
@@ -1306,7 +1862,67 @@
         saveSubItemsToState(tr);
       }
       
-      // ... باقي الكود في هذا السكربت يبقى كما هو ...
+      function hideLegacyButtons(tr) {
+        var actionsCell = tr.querySelector('td:nth-child(6)');
+        if (!actionsCell) return;
+        Array.from(actionsCell.querySelectorAll('button, .btn, a')).forEach(function(b) {
+          var t = (b.innerText || b.textContent || '').trim();
+          if (/تفصيل|تفاصيل|detail|\+/.test(t)) {
+            b.classList.add('is-details-btn');
+            b.style.display = 'none';
+          }
+        });
+      }
+
+      function statusElement(tr) {
+        var el = tr.querySelector('.mobile-status-text');
+        if (!el) {
+          el = document.createElement('div');
+          el.className = 'mobile-status-text neutral';
+          var cell = tr.querySelector('td:nth-child(5)');
+          if (cell) cell.appendChild(el);
+        }
+        return el;
+      }
+
+      function parseNum(v) {
+        v = (v || '').toString().replace(/,/g, '');
+        var n = parseFloat(v);
+        return isNaN(n) ? 0 : n;
+      }
+
+      function updateStatus(tr) {
+        var pEl = tr.querySelector('td:nth-child(2) input');
+        var dEl = tr.querySelector('td:nth-child(3) input');
+        var planned = parseNum(pEl && pEl.value);
+        var paid = parseNum(dEl && dEl.value);
+        var el = statusElement(tr);
+        if (!el) return;
+        if (paid > planned) {
+          var diff = (paid - planned).toFixed(2).replace(/\.00$/, '');
+          el.className = 'mobile-status-text over';
+          el.textContent = 'تجاوز المخطط بـ ' + diff;
+        } else if (planned > paid) {
+          var left = (planned - paid).toFixed(2).replace(/\.00$/, '');
+          el.className = 'mobile-status-text ok';
+          el.textContent = 'المتبقي ' + left;
+        } else {
+          el.className = 'mobile-status-text neutral';
+          el.textContent = 'مطابق للمخطط';
+        }
+      }
+
+      function wireInputs(tr) {
+        var p = tr.querySelector('td:nth-child(2) input');
+        var d = tr.querySelector('td:nth-child(3) input');
+        if (p) p.addEventListener('input', function() {
+          updateStatus(tr);
+        });
+        if (d) d.addEventListener('input', function() {
+          updateStatus(tr);
+        });
+        updateStatus(tr);
+      }
 
       function enhanceRow(tr) {
         if (!tr || tr.getAttribute('data-mobile-enhanced') === '1') return;
@@ -1342,11 +1958,24 @@
         tr.setAttribute('data-mobile-enhanced', '1');
       }
 
-      // ... باقي الكود حتى النهاية يبقى كما هو ...
-      
+      function enhanceAll() {
+        var tableBody = document.getElementById('rows').querySelector('tbody');
+        if (!tableBody) return;
+        var rows = tableBody.querySelectorAll('tr');
+        rows.forEach(enhanceRow);
+      }
+
+      function hideHeader() {
+        try {
+          var table = document.getElementById('rows');
+          if (!table) return;
+          var thead = table.querySelector('thead');
+          if (thead) thead.style.display = 'none';
+        } catch (e) {}
+      }
+
       function install() {
         if (!window.matchMedia || !window.matchMedia('(max-width: 430px)').matches) return;
-        patchAddButton();
         enhanceAll();
         hideHeader();
         var tableBody = document.getElementById('rows').querySelector('tbody');
